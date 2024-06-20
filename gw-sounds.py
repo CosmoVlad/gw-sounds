@@ -84,7 +84,6 @@ def gen_sounds(duration,ff,mm, sr=44100):
     length = int(sr*duration)
     
     numsignals = len(ff)
-    A = 1.  # amplitude; equal for now
     
     eta = 0.25
     Mc = eta**(3./5) * mm
@@ -92,21 +91,34 @@ def gen_sounds(duration,ff,mm, sr=44100):
     
     tc = 5*Mc/256. * (np.pi*Mc*ff)**(-8./3)
     
-    ff *= 10**6
+    ff = 100*(ff/1e-4)**(np.log10(40)/2)
     tc /= sr
     
-    print(tc.min())
+    print(np.sort(tc)[:10])
+    
     
     freq = np.tile(ff, (length,1)).T
     tmerge = np.tile(tc, (length,1)).T
+    mchirp = np.tile(eta**(3./5) * mm, (length,1)).T
     psi = np.tile(2*np.pi*rng.random(numsignals), (length,1)).T
+    A = 1.
     
     
     times = np.linspace(0,duration,length)
-    phase = 2*np.pi*freq * (8./5)*tmerge*(1 - (1-times/tmerge)**(5./8))
+    
+    cond = tmerge > times
+    factor = np.where(
+        cond,
+        (1-times/tmerge),
+        1.
+    )
+
+    
+    phase = 2*np.pi*freq * (8./5)*tmerge
+    phase *=(1 - factor**(5./8))
     
     
-    signal = A*np.sum(np.cos(phase + psi), axis=0)
+    signal = np.sum(mchirp**(5./3)*(freq*factor**(-3./8))**(2./3)*np.cos(phase + psi), axis=0)
     
     amplitude = np.iinfo(np.int16).max
     
@@ -121,13 +133,13 @@ numsignals = 100
 samplerate = 2*44100
 
 ff = 10**(-4 + 2*rng.random(numsignals))
-mm = 100 + 900*rng.random(numsignals)
+mm = 0.5 + rng.random(numsignals)
 
-times,data = gen_sounds(5, ff, mm, sr=samplerate)
+times,data = gen_sounds(5.3, ff, mm, sr=samplerate)
 
 fig,ax = plt.subplots(ncols=1, nrows=1, figsize=(6,5))
 
-ax.plot(times[:1000], data[:1000])
+ax.plot(times, data)
 
 
 ax.grid(True,linestyle=':',linewidth='1.')
