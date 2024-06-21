@@ -77,9 +77,16 @@ Msun *= G/c**3
 # $$
 
 # %%
+from scipy.signal.windows import tukey
+from scipy.io.wavfile import write
+
+fmin = 1e+2
+fmax = 4e+3
+
+
 # generate a GW sound of length [s] for equal-mass binaries of masses mm [Msun] at frequencies ff [Hz] 
 
-def gen_sounds(duration,ff,mm, sr=44100, fmin=1e+2, fmax=4e+3):
+def gen_sounds(duration,ff,mm, sr=44100, fmin=fmin, fmax=fmax):
     
     length = int(sr*duration)
     
@@ -131,19 +138,60 @@ def gen_sounds(duration,ff,mm, sr=44100, fmin=1e+2, fmax=4e+3):
     return times, np.sum(ampl*np.cos(phase + psi), axis=0)
 
 
+def zero_pad(data, inc=0):  # inc defines whether we go for the nearest power of two or more
+    """
+    This function takes in a vector and zero pads it so it is a power of two.
+    """
+    N = len(data)
+    pow_2 = np.ceil(np.log2(N)) + inc
+    return np.pad(data,(0,int((2**pow_2)-N-1)),'constant')
+
+
+def better_fft(signal, time, inc=0, tukey_frac=0.05):
+    """
+    This function takes in a signal and the respective times, 
+    multiplies it by a window function, pads the result with zeros,
+    and perform an FFT. The output is two arrays: frequencies and the power spectrum.
+    """
+    
+    dt = time[1]-time[0]
+    N = len(signal)
+    window = tukey(N, tukey_frac)
+    signal_tapered = signal*window
+    signal_padded = zero_pad(signal_tapered, inc)
+    
+    freqs = np.fft.rfftfreq(len(signal_padded), dt)
+    hf = dt*np.fft.rfft(signal_padded)
+    
+    return freqs, np.abs(hf)**2
+
+def sci_format(num,digits=0):
+    
+    b = np.floor(np.log10(num))
+    a = num/10**b
+    
+    if a == 1.:
+        return '10^{:d}'.format(int(b))
+    
+    return ('{{:.{:d}f}}'.format(int(digits)) + '\\times 10^{:d}').format(a,int(b))
+
+
 
 # %%
 rng = np.random.default_rng()
 
-numsignals = 12
+name = 'variable_mass'
+
+numsignals = 7
 samplerate = 2*44100
 
-mm = np.logspace(3,7,5)
+mm = np.logspace(4,7,numsignals)
 ff = np.full_like(mm, 1e-3)
-duration = np.full_like(mm, 5.)
+duration = np.full_like(mm, 3.)
 
 chunks = []
 times = []
+ffts = []
 shift = 0.
 
 amplitude = np.iinfo(np.int16).max
@@ -158,6 +206,7 @@ for f,m,dur in zip(ff,mm,duration):
     
     times.append(time + shift)
     chunks.append(chunk)
+    ffts.append(better_fft(chunk,time,inc=1))
     
     shift += dur
 
@@ -171,10 +220,13 @@ data = signal
 # amplitude = np.iinfo(np.int16).max
 # data = amplitude * signal/np.abs(signal).max()
 
-fig,ax = plt.subplots(ncols=1, nrows=1, figsize=(6,5))
+fig,ax = plt.subplots(ncols=1, nrows=1, figsize=(7,5))
 
-ax.plot(time, data)
+p = []
 
+for i in range(numsignals):
+    line = ax.plot(times[i], chunks[i])
+    p.append(line)
 
 ax.grid(True,linestyle=':',linewidth='1.')
 ax.xaxis.set_ticks_position('both')
@@ -184,19 +236,37 @@ ax.tick_params('both',length=3,width=0.5,which='both',direction = 'in',pad=10)
 ax.set_xlabel('time, s')
 ax.set_ylabel('amplitude')
 
-# %%
-from scipy.io.wavfile import write
+fig.tight_layout()
+fig.savefig('{}.jpg'.format(name))
 
-
-write("example.wav", samplerate, data.astype(np.int16))
-
-# %%
-fmin = 100
-fmax = 4000
-
-fmin*(1e-3/1e-4)**(np.log10(fmax/fmin)/2)
+write('{}.wav'.format(name), samplerate, data.astype(np.int16))
 
 # %%
-chunk
+fig,ax = plt.subplots(ncols=1, nrows=1, figsize=(7,5))
+
+for (x,y),line,m in zip(ffts[:6],p[:6],mm[:6]):
+    
+    label = '$' + sci_format(m) + ' M_\\odot$'
+    
+    ax.loglog(
+        x, y, 
+        lw=2, c=line[0].get_color(), label=label
+    )
+
+ax.grid(True,linestyle=':',linewidth='1.')
+ax.xaxis.set_ticks_position('both')
+ax.yaxis.set_ticks_position('both')
+ax.tick_params('both',length=3,width=0.5,which='both',direction = 'in',pad=10)
+
+ax.set_xlim(fmin,fmax)
+ax.set_ylim(1e-1,1e+9)
+
+ax.set_xlabel('frequenzy, Hz')
+ax.set_ylabel('$\\left|h_F\\right|^2$')
+
+ax.legend()
+
+fig.tight_layout()
+fig.savefig('{}_fft.jpg'.format(name))
 
 # %%
