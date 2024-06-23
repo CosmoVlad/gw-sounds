@@ -195,7 +195,7 @@ lisa_period = 5
 
 # generate a GW sound of length [s] for equal-mass binaries of masses mm [Msun] at frequencies ff [Hz] 
 
-def gen_sounds(duration,ff,mm, sr=44100, fmin=fmin, fmax=fmax, lisa_period=lisa_period, thetaS=np.pi/2, phiS=0.01):
+def gen_sounds(duration,ff,mm, sr=44100, fmin=fmin, fmax=fmax, lisa_period=lisa_period, thetaS=np.pi/2, phiS=0.):
     
     length = int(sr*duration)
     
@@ -236,7 +236,7 @@ def gen_sounds(duration,ff,mm, sr=44100, fmin=fmin, fmax=fmax, lisa_period=lisa_
 
     phase = 2*np.pi*freq * (8./5)*tmerge
     phase *=(1 - factor**(5./8))
-    phase += 2*np.pi * 0.1*freq*np.sin(thetaS)*np.cos(2*np.pi*times/lisa_period - phiS)
+    #phase += 2*np.pi * 0.1*freq*np.sin(thetaS)*np.cos(2*np.pi*times/lisa_period - phiS)
     
     ampl = np.where(
         cond,
@@ -290,48 +290,58 @@ def sci_format(num,digits=0):
 # %%
 rng = np.random.default_rng()
 
-name = 'response'
+name = 'noise'
 
 samplerate = 2*44100
 numsignals = 1
 channels = 2
 
-name += '_pattern_channels={:d}'.format(channels)
+#name += '_pattern_channels={:d}'.format(channels)
 
 
 
 amplitude = np.iinfo(np.int16).max
 
-duration = 10
+duration = 15
 
 mm = 10**(1 + 2*rng.random(numsignals))
 ff = np.array([2e-3])
 
-time,signal = gen_sounds(duration, ff, mm, sr=samplerate, thetaS=thetaS, phiS=phiS)
+time,signal = gen_sounds(duration, ff, mm, sr=samplerate)
 
-# LISA pattern functions
+N = 3
+n = int(len(signal)/N)
 
-thetaS = np.pi/3
-phiS = 0.01
-iota = np.pi/4
-Phi = 0.1
+chunks = []
+times = []
 
-Fp_I = Fplus(time/lisa_period, thetaS, phiS, iota, Phi, phase_shift=0.)
-Fc_I = Fcross(time/lisa_period, thetaS, phiS, iota, Phi, phase_shift=0.)
-Fp_II = Fplus(time/lisa_period, thetaS, phiS, iota, Phi, phase_shift=np.pi/4)
-Fc_II = Fcross(time/lisa_period, thetaS, phiS, iota, Phi, phase_shift=np.pi/4)
+for i in range(N):
+    chunks.append(signal[i*n:(i+1)*n])
+    times.append(time[i*n:(i+1)*n])
+    
+times = np.concatenate(times)
 
-signal1 = signal * (Fp_I*(1+np.cos(iota)**2) + Fc_I*2*np.cos(iota))
-signal2 = signal * (Fp_II*(1+np.cos(iota)**2) + Fc_II*2*np.cos(iota))
+data = []
+
+noise_ampl = 0.5
+
+for chunk in chunks:
+    chunk += noise_ampl * np.max(chunk) * rng.normal(size=len(chunk))
+    data.append(chunk)
+    noise_ampl *=2
+        
+data = np.concatenate(data)
+
+data = amplitude * data/np.abs(data).max()
+    
 
 
-if np.abs(signal1).max() != 0.:
-    signal1 = amplitude * signal1/np.abs(signal1).max()
-if np.abs(signal2).max() != 0.:
-    signal2 = amplitude * signal2/np.abs(signal2).max()
+# if np.abs(signal).max() != 0.:
+#     signal = amplitude * signal/np.abs(signal).max()
+
 
     
-data = np.array([signal1.astype(np.int16),signal2.astype(np.int16)], dtype=np.int16)
+# data = np.array([signal], dtype=np.int16)
 
 # %%
 # amplitude = np.iinfo(np.int16).max
@@ -345,13 +355,13 @@ fig,ax = plt.subplots(ncols=1, nrows=1, figsize=(7,5))
 #     line = ax.plot(times[i], full_chunks[i])
 #     p.append(line)
 
-for k,stream in enumerate(data):
-    label = 'LISA arm {:d}'.format(k+1)
-    ax.plot(
-        time,stream, 
-        label=label,
-        alpha=0.7
-    )
+
+label = 'detector noise'
+ax.plot(
+    time,data, 
+    label=label,
+    alpha=0.7
+)
 
 ax.grid(True,linestyle=':',linewidth='1.')
 ax.xaxis.set_ticks_position('both')
@@ -364,31 +374,27 @@ ax.set_ylabel('amplitude')
 ax.legend()
 
 fig.tight_layout()
-# fig.savefig('{}.jpg'.format(name))
+fig.savefig('{}.jpg'.format(name))
 
-# write('{}.wav'.format(name), samplerate, data.T)
+write('{}.wav'.format(name), samplerate, data.astype(np.int16))
 
 # %%
 fig,ax = plt.subplots(ncols=1, nrows=1, figsize=(7,5))
 
 
-for k,stream in enumerate(data):
-    label = 'LISA arm {:d}'.format(k+1)
-    ax.semilogx(
-        *better_fft(stream,time,inc=2), 
-        label=label,
-        alpha=0.7
-    )
+label = 'detector noise'
+ax.loglog(
+    *better_fft(data,time,inc=2), 
+    label=label,
+    alpha=0.7
+)
 
 ax.grid(True,linestyle=':',linewidth='1.')
 ax.xaxis.set_ticks_position('both')
 ax.yaxis.set_ticks_position('both')
 ax.tick_params('both',length=3,width=0.5,which='both',direction = 'in',pad=10)
 
-
-# f0 = fmin*(ff[0]/1e-4)**(np.log10(fmax/fmin)/2)
-# ax.set_xlim(f0 - 100/lisa_period,f0 + 100/lisa_period)
-ax.set_xlim(fmin,fmax/2)
+ax.set_xlim(fmin,fmax)
 # ax.set_ylim(1e-1,1e+9)
 
 ax.set_xlabel('frequenzy, Hz')
@@ -397,6 +403,6 @@ ax.set_ylabel('$\\left|h_F\\right|^2$')
 ax.legend()
 
 fig.tight_layout()
-# fig.savefig('{}_fft.jpg'.format(name))
+fig.savefig('{}_fft.jpg'.format(name))
 
 # %%
