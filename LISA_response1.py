@@ -82,11 +82,12 @@ from scipy.io.wavfile import write
 
 fmin = 1e+2
 fmax = 4e+3
+lisa_period = 5
 
 
 # generate a GW sound of length [s] for equal-mass binaries of masses mm [Msun] at frequencies ff [Hz] 
 
-def gen_sounds(duration,ff,mm, sr=44100, fmin=fmin, fmax=fmax):
+def gen_sounds(duration,ff,mm, sr=44100, fmin=fmin, fmax=fmax, lisa_period=lisa_period, thetaS=np.pi/2, phiS=0.):
     
     length = int(sr*duration)
     
@@ -127,6 +128,7 @@ def gen_sounds(duration,ff,mm, sr=44100, fmin=fmin, fmax=fmax):
 
     phase = 2*np.pi*freq * (8./5)*tmerge
     phase *=(1 - factor**(5./8))
+    phase += 2*np.pi * 0.1*freq*np.sin(thetaS)*np.cos(2*np.pi*times/lisa_period - phiS)
     
     ampl = np.where(
         cond,
@@ -180,13 +182,12 @@ def sci_format(num,digits=0):
 # %%
 rng = np.random.default_rng()
 
-name = 'multitude'
+name = 'response'
 
 samplerate = 2*44100
-numsignals = 100
+numsignals = 1
 
-name += '_{:d}'.format(numsignals)
-
+name += '_Doppler'
 
 
 amplitude = np.iinfo(np.int16).max
@@ -195,8 +196,8 @@ duration = 10
 
 
 #mm = 100 + 9900*rng.random(numsignals)
-mm = 10**(1 + 3*rng.random(numsignals))
-ff = 10**(-4 + 2*rng.random(numsignals))
+mm = 10**(1 + 2*rng.random(numsignals))
+ff = 10**(-3.5 + rng.random(numsignals))
 
 time,signal = gen_sounds(duration, ff, mm, sr=samplerate)
 
@@ -219,7 +220,9 @@ fig,ax = plt.subplots(ncols=1, nrows=1, figsize=(7,5))
 #     line = ax.plot(times[i], full_chunks[i])
 #     p.append(line)
 
-ax.plot(time,data,label='$N={:d}$'.format(numsignals))
+label = 'LISA Doppler'
+
+ax.plot(time,data, label=label)
 
 ax.grid(True,linestyle=':',linewidth='1.')
 ax.xaxis.set_ticks_position('both')
@@ -234,14 +237,14 @@ ax.legend()
 fig.tight_layout()
 # fig.savefig('{}.jpg'.format(name))
 
-# write('{}.wav'.format(name), samplerate, data.astype(np.int16))
+write('{}.wav'.format(name), samplerate, data.astype(np.int16))
 
 # %%
 fig,ax = plt.subplots(ncols=1, nrows=1, figsize=(7,5))
 
 
     
-ax.loglog(*better_fft(data,time,inc=1), label='$N={:d}$'.format(numsignals))
+ax.semilogx(*better_fft(data,time,inc=2), label=label)
 
 ax.grid(True,linestyle=':',linewidth='1.')
 ax.xaxis.set_ticks_position('both')
@@ -249,7 +252,7 @@ ax.yaxis.set_ticks_position('both')
 ax.tick_params('both',length=3,width=0.5,which='both',direction = 'in',pad=10)
 
 ax.set_xlim(fmin,fmax)
-ax.set_ylim(1e-1,1e+9)
+# ax.set_ylim(1e-1,1e+9)
 
 ax.set_xlabel('frequenzy, Hz')
 ax.set_ylabel('$\\left|h_F\\right|^2$')
@@ -261,5 +264,8 @@ fig.tight_layout()
 
 # %% [markdown]
 # ###### 
+
+# %%
+1/5
 
 # %%
