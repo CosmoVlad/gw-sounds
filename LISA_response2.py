@@ -46,6 +46,10 @@ G = 6.67e-11
 Msun = 2e+30
 Msun *= G/c**3
 
+AU = 500.
+
+jnp = np
+
 # fig,ax = plt.subplots(ncols=1, nrows=1, figsize=(6,5))
 
 
@@ -56,6 +60,110 @@ Msun *= G/c**3
 
 # ax.set_xlabel()
 # ax.set_ylabel()
+
+# %%
+def Ln(thetaS,phiS,thetaL,phiL):
+    
+    return jnp.cos(thetaL)*jnp.cos(thetaS) + jnp.sin(thetaL)*jnp.sin(thetaS)*jnp.cos(phiL-phiS)
+    
+def convert_angle(angle):
+    
+    return angle + jnp.piecewise(angle, [angle<0.], [2*jnp.pi])
+
+def source_polarization(thetaS, phiS, thetaL, phiL):
+    
+    return jnp.arctan2(
+        jnp.sin(thetaL)*jnp.sin(phiL-phiS), 
+        jnp.sin(thetaL)*jnp.cos(phiL-phiS)*jnp.cos(thetaS) - jnp.cos(thetaL)*jnp.sin(thetaS)
+    )
+
+def source_inclination(thetaS, phiS, thetaL, phiL):
+    
+    return jnp.arccos(Ln(thetaS,phiS,thetaL,phiL))
+
+def PhiL(thetaS, phiS, iota, Phi):
+    
+    return jnp.arctan2(
+        jnp.cos(iota)*jnp.sin(thetaS)*jnp.sin(phiS) + jnp.sin(iota)*(
+            jnp.sin(Phi)*jnp.cos(phiS) + jnp.cos(Phi)*jnp.sin(phiS)*jnp.cos(thetaS)
+        ),
+        jnp.cos(iota)*jnp.sin(thetaS)*jnp.cos(phiS) - jnp.sin(iota)*(
+            jnp.sin(Phi)*jnp.sin(phiS) - jnp.cos(Phi)*jnp.cos(phiS)*jnp.cos(thetaS)
+        )
+    )
+
+def ThetaL(thetaS, phiS, iota, Phi):
+    
+    return jnp.arccos(
+        jnp.cos(iota)*jnp.cos(thetaS) - jnp.sin(iota)*jnp.sin(thetaS)*jnp.cos(Phi)
+    )
+    
+## LISA pattern functions in terms of (iota, Phi)
+## time is measured in yr
+
+def phi_t(t):
+    
+    return 2*jnp.pi*t
+
+def expr_cos(t, theta, phi):
+    
+    return jnp.cos(theta)/2 - jnp.sqrt(3)/2 * jnp.sin(theta)*jnp.cos(phi_t(t) - phi)
+
+def Lz(t, thetaL, phiL):
+    
+    return expr_cos(t, thetaL, phiL)
+
+def expr_cos_thetaS(t, thetaS, phiS):
+    
+    return expr_cos(t, thetaS, phiS)
+
+
+def expr_phiS(t, thetaS, phiS):
+    
+    return phi_t(t) + jnp.arctan((jnp.sqrt(3)*jnp.cos(thetaS) + jnp.sin(thetaS)*jnp.cos(phi_t(t)-phiS))\
+                             /(2*jnp.sin(thetaS)*jnp.sin(phi_t(t)-phiS)))
+
+def nLz(t, thetaS, phiS, thetaL, phiL):
+    
+    A = jnp.cos(thetaL)*jnp.sin(thetaS)*jnp.sin(phiS) - jnp.cos(thetaS)*jnp.sin(thetaL)*jnp.sin(phiL)
+    B = jnp.cos(thetaS)*jnp.sin(thetaL)*jnp.cos(phiL) - jnp.cos(thetaL)*jnp.sin(thetaS)*jnp.cos(phiS)
+    
+    return jnp.sin(thetaL)*jnp.sin(thetaS)*jnp.sin(phiL-phiS)/2\
+                - jnp.sqrt(3)/2 * jnp.cos(phi_t(t)) * A\
+                - jnp.sqrt(3)/2 * jnp.sin(phi_t(t)) * B
+
+
+def polarization_angle(t, thetaS, phiS, Phi):
+    
+    z1 = jnp.sqrt(3)/2 * jnp.cos(thetaS) * jnp.cos(phi_t(t)-phiS) + 0.5 * jnp.sin(thetaS)
+    z2 = jnp.sqrt(3)/2 * jnp.sin(phi_t(t)-phiS)
+    
+    return jnp.arctan2((-z1*jnp.cos(Phi) - z2*jnp.sin(Phi)),(z1*jnp.sin(Phi) - z2*jnp.cos(Phi)))
+    
+def shift(phase, dphase):
+    
+    return phase - dphase
+
+def Fplus(t, thetaS, phiS, iota, Phi, phase_shift=0):
+    
+    cosThetaS = expr_cos_thetaS(t, thetaS, phiS)
+    pol_angle = polarization_angle(t, thetaS, phiS, Phi)
+    PhiS = shift(expr_phiS(t, thetaS, phiS),phase_shift)
+    #PhiS -= phase_shift
+    
+    return (1+cosThetaS**2)/2 * jnp.cos(2*PhiS)*jnp.cos(2*pol_angle)\
+                        - cosThetaS * jnp.sin(2*PhiS)*jnp.sin(2*pol_angle)
+
+def Fcross(t, thetaS, phiS, iota, Phi, phase_shift=0):
+    
+    cosThetaS = expr_cos_thetaS(t, thetaS, phiS)
+    pol_angle = polarization_angle(t, thetaS, phiS, Phi)
+    PhiS = shift(expr_phiS(t, thetaS, phiS), phase_shift)
+    #PhiS -= phase_shift
+    
+    return (1+cosThetaS**2)/2 * jnp.cos(2*PhiS)*jnp.sin(2*pol_angle)\
+                        + cosThetaS * jnp.sin(2*PhiS)*jnp.cos(2*pol_angle)
+
 
 # %% [markdown]
 # ### Shifting GW signals to an audible range from $10^2\;\mbox{Hz}$ to $10^4\;\mbox{Hz}$ 
@@ -186,27 +294,44 @@ name = 'response'
 
 samplerate = 2*44100
 numsignals = 1
+channels = 2
 
-name += '_Doppler'
+name += '_pattern_channels={:d}'.format(channels)
+
 
 
 amplitude = np.iinfo(np.int16).max
 
 duration = 10
 
-
-#mm = 100 + 9900*rng.random(numsignals)
 mm = 10**(1 + 2*rng.random(numsignals))
-ff = 10**(-3.5 + rng.random(numsignals))
+ff = np.array([2e-3])
 
-time,signal = gen_sounds(duration, ff, mm, sr=samplerate)
+time,signal = gen_sounds(duration, ff, mm, sr=samplerate, thetaS=thetaS, phiS=phiS)
+
+# LISA pattern functions
+
+thetaS = np.pi/3
+phiS = 0.01
+iota = np.pi/4
+Phi = 0.1
+
+Fp_I = Fplus(time/lisa_period, thetaS, phiS, iota, Phi, phase_shift=0.)
+Fc_I = Fcross(time/lisa_period, thetaS, phiS, iota, Phi, phase_shift=0.)
+Fp_II = Fplus(time/lisa_period, thetaS, phiS, iota, Phi, phase_shift=np.pi/4)
+Fc_II = Fcross(time/lisa_period, thetaS, phiS, iota, Phi, phase_shift=np.pi/4)
+
+signal1 = signal * (Fp_I*(1+np.cos(iota)**2) + Fc_I*2*np.cos(iota))
+signal2 = signal * (Fp_II*(1+np.cos(iota)**2) + Fc_II*2*np.cos(iota))
 
 
-if np.abs(signal).max() != 0.:
-    signal = amplitude * signal/np.abs(signal).max()
+if np.abs(signal1).max() != 0.:
+    signal1 = amplitude * signal1/np.abs(signal1).max()
+if np.abs(signal2).max() != 0.:
+    signal2 = amplitude * signal2/np.abs(signal2).max()
 
     
-data = signal
+data = np.array([signal1.astype(np.int16),signal2.astype(np.int16)], dtype=np.int16)
 
 # %%
 # amplitude = np.iinfo(np.int16).max
@@ -220,9 +345,13 @@ fig,ax = plt.subplots(ncols=1, nrows=1, figsize=(7,5))
 #     line = ax.plot(times[i], full_chunks[i])
 #     p.append(line)
 
-label = 'LISA Doppler'
-
-ax.plot(time,data, label=label)
+for k,stream in enumerate(data):
+    label = 'LISA arm {:d}'.format(k+1)
+    ax.plot(
+        time,stream, 
+        label=label,
+        alpha=0.7
+    )
 
 ax.grid(True,linestyle=':',linewidth='1.')
 ax.xaxis.set_ticks_position('both')
@@ -237,21 +366,29 @@ ax.legend()
 fig.tight_layout()
 # fig.savefig('{}.jpg'.format(name))
 
-write('{}.wav'.format(name), samplerate, data.astype(np.int16))
+# write('{}.wav'.format(name), samplerate, data.T)
 
 # %%
 fig,ax = plt.subplots(ncols=1, nrows=1, figsize=(7,5))
 
 
-    
-ax.semilogx(*better_fft(data,time,inc=2), label=label)
+for k,stream in enumerate(data):
+    label = 'LISA arm {:d}'.format(k+1)
+    ax.semilogx(
+        *better_fft(stream,time,inc=2), 
+        label=label,
+        alpha=0.7
+    )
 
 ax.grid(True,linestyle=':',linewidth='1.')
 ax.xaxis.set_ticks_position('both')
 ax.yaxis.set_ticks_position('both')
 ax.tick_params('both',length=3,width=0.5,which='both',direction = 'in',pad=10)
 
-ax.set_xlim(fmin,fmax)
+
+# f0 = fmin*(ff[0]/1e-4)**(np.log10(fmax/fmin)/2)
+# ax.set_xlim(f0 - 100/lisa_period,f0 + 100/lisa_period)
+ax.set_xlim(fmin,fmax/2)
 # ax.set_ylim(1e-1,1e+9)
 
 ax.set_xlabel('frequenzy, Hz')
@@ -261,11 +398,5 @@ ax.legend()
 
 fig.tight_layout()
 # fig.savefig('{}_fft.jpg'.format(name))
-
-# %% [markdown]
-# ###### 
-
-# %%
-1/5
 
 # %%
